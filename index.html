@@ -1,0 +1,263 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Тренажёр</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+  :root {
+    --bg: #0d0f14; --card: #161a22; --card2: #1d2230; --line: #262c3a;
+    --text: #eef1f6; --muted: #8b93a7; --accent: #5b8cff; --accent2: #7c5bff;
+    --ok: #2fbf71; --bad: #ef5350; --gold: #f2b84b;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; background: var(--bg); color: var(--text);
+    font: 17px/1.45 -apple-system, "Segoe UI", Roboto, Inter, sans-serif; }
+  #app { max-width: 560px; margin: 0 auto; padding: 16px 16px 120px; }
+  h1 { font-size: 26px; margin: 4px 0 16px; letter-spacing: -.3px; }
+  h2 { font-size: 15px; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); margin: 24px 0 10px; font-weight: 600; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 18px; padding: 18px; }
+  .hero { background: linear-gradient(135deg, #1b2440, #191a2e 60%, #161a22); }
+  .lvl { display: flex; align-items: baseline; justify-content: space-between; }
+  .lvl b { font-size: 30px; }
+  .lvl span { color: var(--muted); font-size: 15px; }
+  .rank { color: var(--gold); font-weight: 600; font-size: 18px; margin-top: 2px; }
+  .bar { height: 10px; background: #0c0f16; border-radius: 99px; overflow: hidden; margin: 14px 0 6px; }
+  .bar i { display: block; height: 100%; width: 0; border-radius: 99px;
+    background: linear-gradient(90deg, var(--accent), var(--accent2)); transition: width .6s ease; }
+  .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 12px; }
+  .stat { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 14px 10px; text-align: center; }
+  .stat b { display: block; font-size: 24px; }
+  .stat span { color: var(--muted); font-size: 13px; }
+  .btn { display: block; width: 100%; border: 0; border-radius: 16px; padding: 18px; font: inherit; font-weight: 650;
+    font-size: 18px; color: #fff; background: linear-gradient(135deg, var(--accent), var(--accent2)); cursor: pointer;
+    margin-top: 12px; transition: transform .08s, opacity .2s; }
+  .btn:active { transform: scale(.98); }
+  .btn.ghost { background: var(--card2); border: 1px solid var(--line); color: var(--text); font-weight: 600; }
+  .btn:disabled { opacity: .5; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .tile { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 16px 14px; cursor: pointer;
+    display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 16px; min-height: 64px; }
+  .tile.on { border-color: var(--accent); background: #18213a; }
+  .tile .e { font-size: 24px; }
+  .tabs { display: flex; gap: 8px; margin-bottom: 14px; }
+  .tabs button { flex: 1; padding: 12px; border-radius: 12px; border: 1px solid var(--line); background: var(--card);
+    color: var(--muted); font: inherit; font-weight: 600; font-size: 15px; }
+  .tabs button.on { color: #fff; background: var(--card2); border-color: var(--accent); }
+  .topic { color: var(--accent); font-size: 14px; font-weight: 600; text-transform: uppercase; letter-spacing: .6px; }
+  .q { font-size: 20px; font-weight: 500; margin: 10px 0 0; white-space: pre-wrap; }
+  pre { background: #0b0d12; border: 1px solid var(--line); border-radius: 12px; padding: 14px; overflow-x: auto; font-size: 15px; }
+  .opt { display: block; width: 100%; text-align: left; margin-top: 10px; padding: 16px 18px; border-radius: 14px;
+    border: 1px solid var(--line); background: var(--card2); color: var(--text); font: inherit; font-size: 18px; cursor: pointer; }
+  .opt.ok { border-color: var(--ok); background: rgba(47,191,113,.15); }
+  .opt.bad { border-color: var(--bad); background: rgba(239,83,80,.15); }
+  input.ans { width: 100%; margin-top: 14px; padding: 16px 18px; font: inherit; font-size: 20px; color: var(--text);
+    background: #0b0d12; border: 1px solid var(--line); border-radius: 14px; outline: none; }
+  input.ans:focus { border-color: var(--accent); }
+  .verdict { margin-top: 16px; padding: 16px; border-radius: 14px; font-size: 17px; }
+  .verdict.ok { background: rgba(47,191,113,.12); border: 1px solid rgba(47,191,113,.4); }
+  .verdict.bad { background: rgba(239,83,80,.12); border: 1px solid rgba(239,83,80,.4); }
+  .verdict b { font-size: 20px; }
+  .explain { margin-top: 10px; color: #c9cfdc; white-space: pre-wrap; }
+  .ev { margin-top: 8px; padding: 12px 14px; border-radius: 12px; background: #221d10; border: 1px solid #4a3a14; color: var(--gold); font-weight: 600; }
+  .row { display: flex; justify-content: space-between; align-items: center; padding: 14px 4px; border-bottom: 1px solid var(--line); }
+  .row.me { color: var(--accent); font-weight: 700; }
+  .badge { display: flex; gap: 12px; align-items: center; padding: 12px 4px; border-bottom: 1px solid var(--line); }
+  .badge .e { font-size: 26px; width: 36px; text-align: center; }
+  .badge.off { opacity: .35; filter: grayscale(1); }
+  .muted { color: var(--muted); font-size: 15px; }
+  .top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+  .back { background: none; border: 0; color: var(--accent); font: inherit; font-size: 17px; padding: 6px 0; cursor: pointer; }
+  .mini { font-size: 14px; color: var(--muted); }
+  .nav { position: fixed; left: 0; right: 0; bottom: 0; background: rgba(13,15,20,.92); backdrop-filter: blur(10px);
+    border-top: 1px solid var(--line); display: flex; padding: 8px 8px calc(8px + env(safe-area-inset-bottom)); }
+  .nav button { flex: 1; background: none; border: 0; color: var(--muted); font: inherit; font-size: 13px; font-weight: 600; padding: 8px; }
+  .nav button.on { color: var(--text); }
+  .nav button span { display: block; font-size: 22px; }
+  .center { text-align: center; padding: 40px 0; color: var(--muted); }
+</style>
+</head>
+<body>
+<div id="app"><div class="center">Загрузка…</div></div>
+<nav class="nav" id="nav">
+  <button data-go="home" class="on"><span>◆</span>Главная</button>
+  <button data-go="subjects"><span>☰</span>Предметы</button>
+  <button data-go="stats"><span>★</span>Рейтинг</button>
+</nav>
+<script>
+const tg = window.Telegram && Telegram.WebApp;
+if (tg) { tg.ready(); tg.expand(); try { tg.setHeaderColor("#0d0f14"); tg.setBackgroundColor("#0d0f14"); } catch (e) {} }
+const initData = tg ? tg.initData : "";
+const $app = document.getElementById("app");
+let S = { profile: null, catalog: [], level: null, q: null, mode: "t" };
+
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const haptic = t => { try { tg.HapticFeedback.notificationOccurred(t); } catch (e) {} };
+// Страница может лежать на GitHub Pages, тогда адрес сервера бот передаёт в ссылке: ?api=https://…
+const API = (new URLSearchParams(location.search).get("api") || "").replace(/\/$/, "");
+async function api(path, body = {}) {
+  let r;
+  try {
+    r = await fetch(API + "/api/" + path, { method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({ initData, ...body }) });
+  } catch (e) {
+    throw new Error("Сервер тренажёра не отвечает. Закрой и открой приложение заново через кнопку в боте.");
+  }
+  if (r.status === 401) throw new Error("Открой тренажёр через кнопку в боте");
+  return r.json();
+}
+function setNav(name) {
+  document.querySelectorAll("#nav button").forEach(b => b.classList.toggle("on", b.dataset.go === name));
+}
+document.querySelectorAll("#nav button").forEach(b => b.onclick = () => go(b.dataset.go));
+function go(name) { setNav(name); ({ home, subjects, stats })[name](); window.scrollTo(0, 0); }
+
+function subjectName() {
+  const s = S.profile.subject; if (!s) return null;
+  const lvl = S.catalog.find(l => l.code === s.level);
+  const sub = lvl && lvl.subjects.find(x => x.code === s.code);
+  return sub ? `${sub.emoji} ${sub.title} · ${lvl.title.replace(/^\S+\s/, "")}` : null;
+}
+
+function home() {
+  const p = S.profile, pct = Math.min(100, (p.xp - p.lo) / (p.hi - p.lo) * 100);
+  const name = subjectName();
+  $app.innerHTML = `
+    <h1>Привет, ${esc(p.name || "ученик")}</h1>
+    <div class="card hero">
+      <div class="lvl"><b>Уровень ${p.level}</b><span>${p.xp} / ${p.hi} XP</span></div>
+      <div class="rank">${esc(p.title)}</div>
+      <div class="bar"><i id="xpbar"></i></div>
+      <div class="mini">До следующего уровня ${p.hi - p.xp} XP</div>
+    </div>
+    <div class="stats">
+      <div class="stat"><b>${p.streak}</b><span>серия дней</span></div>
+      <div class="stat"><b>${p.today}/${p.goal}</b><span>сегодня</span></div>
+      <div class="stat"><b>${p.total ? Math.round(p.correct / p.total * 100) : 0}%</b><span>точность</span></div>
+    </div>
+    <h2>Предмет</h2>
+    <div class="card">${name ? `<b>${esc(name)}</b>` : `<span class="muted">Ещё не выбран</span>`}
+      ${p.left === null ? `<div class="mini" style="margin-top:6px">Премиум: без лимита</div>`
+        : `<div class="mini" style="margin-top:6px">Бесплатных заданий сегодня: ${p.left}</div>`}</div>
+    ${name ? `<button class="btn" onclick="startQ('t')">Решать задания</button>
+      <button class="btn ghost" onclick="startQ('m')">Работа над ошибками</button>` : ""}
+    <button class="btn ghost" onclick="go('subjects')">${name ? "Сменить предмет" : "Выбрать предмет"}</button>`;
+  requestAnimationFrame(() => document.getElementById("xpbar").style.width = pct + "%");
+}
+
+function subjects() {
+  if (!S.level) S.level = (S.profile.subject && S.profile.subject.level) || S.catalog[0].code;
+  const lvl = S.catalog.find(l => l.code === S.level), cur = S.profile.subject || {};
+  $app.innerHTML = `<h1>Предметы</h1>
+    <div class="tabs">${S.catalog.map(l => `<button class="${l.code === S.level ? "on" : ""}" data-l="${l.code}">
+      ${esc(l.title.replace(/^\S+\s/, "").split(" · ")[0])}</button>`).join("")}</div>
+    <div class="grid">${lvl.subjects.map(s => `<div class="tile ${cur.level === lvl.code && cur.code === s.code ? "on" : ""}"
+      data-s="${s.code}"><span class="e">${s.emoji}</span>${esc(s.title)}</div>`).join("")}</div>`;
+  $app.querySelectorAll("[data-l]").forEach(b => b.onclick = () => { S.level = b.dataset.l; subjects(); });
+  $app.querySelectorAll("[data-s]").forEach(t => t.onclick = () => {
+    S.profile.subject = { level: S.level, code: t.dataset.s }; setNav("home"); startQ("t");
+  });
+}
+
+async function startQ(mode) {
+  S.mode = mode; setNav("home");
+  $app.innerHTML = `<div class="center">Подбираю задание…</div>`;
+  const s = S.profile.subject;
+  const q = await api("question", { level: s.level, subject: s.code, mode });
+  window.scrollTo(0, 0);
+  const head = `<div class="top"><button class="back" onclick="go('home')">← Назад</button>
+    <span class="mini">${mode === "m" ? "Работа над ошибками" : esc(subjectName() || "")}</span></div>`;
+  if (q.paywall) {
+    $app.innerHTML = head + `<div class="card"><b>Лимит на сегодня исчерпан</b>
+      <p class="muted">Бесплатно — ${q.free} заданий в день. Безлимит можно взять в боте: команда /premium.</p></div>
+      <button class="btn" onclick="tg && tg.close()">Вернуться в бота</button>`;
+    return;
+  }
+  if (q.empty || q.error) {
+    $app.innerHTML = head + `<div class="card">${esc(q.empty || q.error)}</div>
+      <button class="btn" onclick="startQ('t')">Решать задания</button>`;
+    return;
+  }
+  S.q = q;
+  $app.innerHTML = head + `<div class="card">
+      <div class="topic">${esc(q.topic)}</div>
+      <div class="q">${esc(q.text)}</div>
+      ${q.code ? `<pre>${esc(q.code)}</pre>` : ""}
+    </div>
+    <div id="answers">${q.options
+      ? q.options.map((o, i) => `<button class="opt" data-i="${i}">${esc(o)}</button>`).join("")
+      : `<input class="ans" id="ans" placeholder="Твой ответ" autocomplete="off" enterkeyhint="done">
+         <button class="btn" id="send">Ответить</button>
+         <button class="btn ghost" id="skip">Не знаю</button>`}</div>
+    <div id="result"></div>`;
+  if (q.options) {
+    $app.querySelectorAll(".opt").forEach(b => b.onclick = () => answer({ choice: +b.dataset.i }));
+  } else {
+    const inp = document.getElementById("ans");
+    document.getElementById("send").onclick = () => inp.value.trim() && answer({ text: inp.value });
+    inp.onkeydown = e => { if (e.key === "Enter" && inp.value.trim()) answer({ text: inp.value }); };
+    document.getElementById("skip").onclick = () => answer({ skip: true });
+  }
+}
+
+let busy = false;
+async function answer(body) {
+  if (busy) return; busy = true;
+  try {
+    const r = await api("answer", { qid: S.q.id, ...body });
+    if (r.error) { document.getElementById("result").innerHTML = `<div class="verdict bad">${esc(r.error)}</div>`; return; }
+    haptic(r.correct ? "success" : "error");
+    S.profile = r.profile;
+    if (S.q.options) {
+      document.querySelectorAll(".opt").forEach((b, i) => {
+        b.disabled = true;
+        if (i === r.right) b.classList.add("ok"); else if (i === r.picked) b.classList.add("bad");
+      });
+    } else {
+      document.getElementById("answers").querySelectorAll("button,input").forEach(x => x.disabled = true);
+    }
+    document.getElementById("result").innerHTML = `
+      <div class="verdict ${r.correct ? "ok" : "bad"}">
+        <b>${r.correct ? "Верно" : "Неверно"}</b> <span class="muted">+${r.xp} XP</span>
+        ${r.correct ? "" : `<div style="margin-top:6px">Правильный ответ: <b>${esc(r.answer)}</b></div>`}
+        ${r.explain ? `<div class="explain">${esc(r.explain)}</div>` : ""}
+      </div>
+      ${r.events.map(e => `<div class="ev">${esc(e)}</div>`).join("")}
+      <button class="btn" id="next">Дальше</button>`;
+    document.getElementById("next").onclick = () => startQ(S.mode);
+    document.getElementById("next").scrollIntoView({ behavior: "smooth", block: "end" });
+  } finally { busy = false; }
+}
+
+async function stats() {
+  $app.innerHTML = `<div class="center">Загрузка…</div>`;
+  const r = await api("stats");
+  const got = r.badges.filter(b => b.have).length;
+  $app.innerHTML = `<h1>Рейтинг недели</h1>
+    <div class="card"><b>${r.place}-е место</b> <span class="muted">· ${r.mine} верных за неделю</span></div>
+    <div class="card" style="margin-top:12px;padding:6px 14px">${r.top.length ? r.top.map((t, i) =>
+      `<div class="row ${t.me ? "me" : ""}"><span>${i + 1}. ${esc(t.name)}</span><b>${t.score}</b></div>`).join("")
+      : `<div class="center">Пока пусто — стань первым</div>`}</div>
+    <h2>Достижения · ${got} из ${r.badges.length}</h2>
+    <div class="card" style="padding:6px 14px">${r.badges.map(b => `<div class="badge ${b.have ? "" : "off"}">
+      <span class="e">${b.emoji}</span><div><b>${esc(b.name)}</b><div class="muted">${esc(b.desc)}</div></div></div>`).join("")}</div>`;
+}
+
+window.addEventListener("unhandledrejection", e => {
+  $app.innerHTML = `<div class="center">${esc(e.reason && e.reason.message || "Ошибка")}</div>
+    <button class="btn ghost" onclick="location.reload()">Обновить</button>`;
+});
+
+(async () => {
+  try {
+    const r = await api("me");
+    S.profile = r.profile; S.catalog = r.catalog;
+    home();
+  } catch (e) {
+    $app.innerHTML = `<div class="center">${esc(e.message)}</div>`;
+  }
+})();
+</script>
+</body>
+</html>
