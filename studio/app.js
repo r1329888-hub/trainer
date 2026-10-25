@@ -7,7 +7,7 @@ const hap = (t = 'selection') => { try { t === 'selection' ? tg.HapticFeedback.s
 if (tg) { try { tg.ready(); tg.expand(); tg.setHeaderColor('#0b0805'); tg.setBackgroundColor('#0b0805'); tg.disableVerticalSwipes && tg.disableVerticalSwipes(); } catch (e) {} }
 const lsGet = k => { try { return localStorage.getItem(k); } catch (e) { return null; } };
 const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} };
-const TABN = { filters: 'Фильтр', adjust: 'Правка', curves: 'Кривые', hsl: 'Цвета', local: 'Кисть', crop: 'Кадр', fx: 'Эффект', text: 'Текст', shape: 'Фигура', stick: 'Стикер', draw: 'Рисунок', frame: 'Рамка', auto: 'Авто' };
+const TABN = { filters: 'Фильтр', adjust: 'Правка', curves: 'Кривые', hsl: 'Цвета', local: 'Кисть', crop: 'Кадр', fx: 'Эффект', text: 'Текст', shape: 'Фигура', stick: 'Стикер', draw: 'Рисунок', frame: 'Рамка', auto: 'Авто', smart: 'Умное', erase: 'Удаление' };
 const HIST_MAX = 70;
 
 /* ------------------------------------------------------------------ */
@@ -26,10 +26,14 @@ const S = {
   brush: { color: '#f5dea5', size: 8, type: 'brush' }, text: { font: 'Georgia', color: '#f5dea5' }, shape: { name: 'rect', color: '#d4af64', fill: true },
   lTool: 'paint', lSize: 40, maskView: true, maskHas: false, mv: 0,
   hist: [], redo: [], compare: false, split: null, stats: null, sugg: [], mine: [], mineOn: null, lookPrev: null, pick: false,
-  view: { s: 1, x: 0, y: 0 },
+  view: { s: 1, x: 0, y: 0 }, sv: 0,
 };
 let nextId = 1;
 const imgReg = {};
+const srcStore = {};
+function cloneCanvas(c) { const k = document.createElement('canvas'); k.width = c.width; k.height = c.height; k.getContext('2d').drawImage(c, 0, 0); return k; }
+function ensureBase() { if (!srcStore[S.sv]) srcStore[S.sv] = cloneCanvas(S.src); }
+function commitSrc() { S.sv++; srcStore[S.sv] = cloneCanvas(S.src); const ks = Object.keys(srcStore).map(Number).sort((a, b) => a - b); while (ks.length > 4) delete srcStore[ks.shift()]; }
 const maskStore = {};
 let mkA, mkH, mkAc, mkHc, mkW = 0, mkH_ = 0;
 
@@ -264,7 +268,7 @@ function loadImage(url, isSample) {
   im.onload = () => {
     let w = im.naturalWidth, h = im.naturalHeight; const k = Math.min(1, MAXTEX / Math.max(w, h)); w = Math.round(w * k); h = Math.round(h * k);
     const c = document.createElement('canvas'); c.width = w; c.height = h; c.getContext('2d').drawImage(im, 0, 0, w, h);
-    S.src = c; S.sw = w; S.sh = h; setTexture(c); S.hist = []; S.redo = []; resetAll();
+    S.src = c; S.sw = w; S.sh = h; setTexture(c); S.hist = []; S.redo = []; S.sv = 0; for (const k in srcStore) delete srcStore[k]; resetAll();
     document.body.classList.remove('noimg'); $('empty').style.display = 'none'; $('cv').style.display = 'block'; $('bExport').disabled = false;
     ['bMagic', 'cmpBox'].forEach(id => $(id).style.display = 'flex'); $('histc').style.display = 'block';
     $('load').classList.remove('on');
@@ -433,6 +437,7 @@ function drawOverlay() {
   if (S.split != null && !S.compare && !cropMode()) drawSplit(W, H);
   if (S.compare || cropMode()) return;
   BASE = glc;
+  if (S.tab === 'erase' && (typeof SMART !== 'undefined')) SMART.drawSel(ov, W, H);
   S.fx.forEach(L => drawFx(ov, L, W, H)); drawStrokes(ov, W, H); S.layers.forEach(L => drawLayer(ov, L, W, H)); drawFrame(ov, W, H, S.frame, true);
   const L = S.layers[S.sel];
   if (L && ['text', 'shape', 'stick'].includes(S.tab)) { const m = metrics(ov, L, W, H), pad = m.pad;
@@ -481,6 +486,7 @@ ovc.addEventListener('pointerdown', e => {
   if (S.pick) { pickWB(nx, ny); return; }
   if (S.tab === 'draw') { curStroke = { color: S.brush.color, size: S.brush.size, type: S.brush.type, pts: [[nx, ny]] }; S.strokes.push(curStroke); render(); return; }
   if (S.tab === 'local') { paintLast = null; paintAt(nx, ny, null); gest = { type: 'paint' }; return; }
+  if (S.tab === 'erase' && (typeof SMART !== 'undefined')) { SMART.eraseDown(nx, ny); gest = { type: 'erase' }; return; }
   if (layerTab()) { const i = hitLayer(nx, ny);
     if (i >= 0) { S.sel = i; const L = S.layers[i]; gest = { type: 'move', ox: nx - L.x, oy: ny - L.y }; } else { S.sel = -1; gest = null; }
     syncLayerUI(); render(); return; }
@@ -493,6 +499,7 @@ ovc.addEventListener('pointermove', e => {
   if (curStroke) { const l = curStroke.pts[curStroke.pts.length - 1]; if (Math.hypot(l[0] - nx, l[1] - ny) > .002) { curStroke.pts.push([nx, ny]); render(); } return; }
   if (!gest) return;
   if (gest.type === 'paint') { paintAt(nx, ny, paintLast); return; }
+  if (gest.type === 'erase') { typeof SMART !== 'undefined' && SMART.eraseMove(nx, ny); return; }
   if (gest.type === 'split') { S.split = clamp(nx, .02, .98); placeSplit(); render(); return; }
   if (gest.type === 'pan') { setView(S.view.s, gest.vx + e.clientX - gest.sx, gest.vy + e.clientY - gest.sy); return; }
   if (gest.type === 'zoom' && ptrs.size === 2) { const [a, b] = [...ptrs.values()], d = Math.hypot(a.x - b.x, a.y - b.y), cx = (a.x + b.x) / 2, cy = (a.y + b.y) / 2;
@@ -508,6 +515,7 @@ function endPtr(e) {
     if (Math.abs(dx) > 70 && Math.abs(dx) > Math.abs(dy) * 2 && Date.now() - swipe.t < 700) cycleFilter(dx < 0 ? 1 : -1);
     else if (Math.hypot(dx, dy) < 8) doubleTap(e); swipe = null; return; }
   if (gest && gest.type === 'paint') { gest = null; paintLast = null; commitMask(); pushHist('Кисть'); return; }
+  if (gest && gest.type === 'erase') { gest = null; typeof SMART !== 'undefined' && SMART.eraseUp(); return; }
   if (gest && (ptrs.size === 0 || gest.type === 'pinch' || gest.type === 'zoom')) { const t = gest.type; gest = null; if (t === 'move' || t === 'pinch') pushHist(TABN[S.tab]); if (t === 'pan' && Math.hypot(e.clientX - p0.x, e.clientY - p0.y) < 6) doubleTap(e); return; }
   if (!gest && ptrs.size === 0 && !layerTab() && S.tab !== 'draw' && S.tab !== 'local') doubleTap(e);
 }
@@ -555,13 +563,14 @@ function clearMasks() { mkA.clearRect(0, 0, mkW, mkH_); mkH.clearRect(0, 0, mkW,
 /* ------------------------------------------------------------------ */
 /*  ИСТОРИЯ                                                            */
 /* ------------------------------------------------------------------ */
-function snap() { return JSON.stringify({ geo: S.geo, p: S.p, hsl: S.hsl, filter: S.filter, curves: S.curves, local: S.local, layers: S.layers, strokes: S.strokes, fx: S.fx, frame: S.frame, mv: S.mv, mh: S.maskHas }); }
+function snap() { return JSON.stringify({ geo: S.geo, p: S.p, hsl: S.hsl, filter: S.filter, curves: S.curves, local: S.local, layers: S.layers, strokes: S.strokes, fx: S.fx, frame: S.frame, mv: S.mv, mh: S.maskHas, sv: S.sv }); }
 function pushHist(label, first) {
   const s = snap(); if (S.hist.length && S.hist[S.hist.length - 1].s === s) return;
   S.hist.push({ s, l: label || TABN[S.tab] || 'Правка' }); if (S.hist.length > HIST_MAX) S.hist.shift(); if (!first) S.redo = []; updUndo();
 }
 function restore(entry, cb) {
   const o = JSON.parse(entry.s); Object.assign(S, { geo: o.geo, p: o.p, hsl: o.hsl, filter: o.filter, curves: o.curves || NOCURVE(), local: o.local || NOLOCAL(), layers: o.layers, strokes: o.strokes, fx: o.fx, frame: o.frame, sel: -1 });
+  if ((o.sv || 0) !== S.sv && srcStore[o.sv || 0]) { S.src = cloneCanvas(srcStore[o.sv || 0]); S.sw = S.src.width; S.sh = S.src.height; setTexture(S.src); S.sv = o.sv || 0; }
   updateCurveTex(); const fin = () => { S.mv = o.mv || 0; syncUI(); layout(); render(); cb && cb(); };
   if ((o.mv || 0) !== S.mv || S.maskHas !== !!o.mh) restoreMask(o.mv || 0, fin); else fin();
 }
@@ -894,10 +903,11 @@ const TIPS = { filters: 'Листай фильтры вбок. Нажал фил
   local: 'Закрась участок кистью — потом настрой, что с ним сделать. «Лечение» убирает пятна. Два пальца — приблизить.', crop: 'Тяни углы рамки. Пропорции сверху — для Instagram, историй и экрана.',
   fx: 'Эффекты света и осадков ложатся поверх. Нажми ещё раз на эффект — он уберётся.', text: 'Тап по тексту выбирает его. Двумя пальцами — размер и поворот.', shape: 'Фигуры — для рамок и стрелок. «Скрыть» закрывает лица и номера мозаикой.',
   stick: 'Стикеры двигай пальцем. Своё фото + режим «Экран» = двойная экспозиция.', draw: 'Рисуй пальцем. «Неон» светится, «Маркер» полупрозрачный.', frame: 'Нажми рамку ещё раз — отключится. «Скруглить» и «Круг» дадут прозрачные углы в PNG.',
-  auto: 'Нажми «Магия» — палочка сама улучшит фото. «История» покажет все шаги.' };
+  auto: 'Нажми «Магия» — палочка сама улучшит фото. «История» покажет все шаги.',
+  smart: 'Умные функции: поворот по лицам, человек по центру, скрыть лица, горизонт, стиль с другого фото.', erase: 'Закрась объект кистью или тапни по нему — потом «Удалить». Птица в небе, лишний человек, надпись.' };
 const setTip = t => { $('tipText').textContent = t; };
 $('tipX').onclick = () => { $('tipbar').classList.add('off'); lsSet('studio_notips', '1'); };
-$('bWand').onclick = () => { $('wandSay').textContent = S.src ? (S.sugg[0] ? `Я осмотрела фото. ${S.sugg[0].title}: ${S.sugg[0].desc} Вот что можно сделать:` : 'С фото всё хорошо! Можно сразу играть с фильтрами.') : 'Загрузи фото — и я подскажу, что в нём улучшить.'; renderSugg($('wandSug'), true); $('mWand').classList.add('on'); flyWand(); };
+$('bWand').onclick = () => { $('wandSay').textContent = S.src ? (S.sugg[0] ? `Я осмотрела фото. ${S.sugg[0].title}: ${S.sugg[0].desc} Вот что можно сделать:` : 'С фото всё хорошо! Можно сразу играть с фильтрами.') : 'Загрузи фото — и я подскажу, что в нём улучшить.'; renderSugg($('wandSug'), true); $('mWand').classList.add('on'); };
 $('wandClose').onclick = () => $('mWand').classList.remove('on');
 $('wandTour').onclick = () => { $('mWand').classList.remove('on'); startTour(); };
 const TOUR = [['Добро пожаловать!', 'Я волшебная палочка. Покажу, как тут всё устроено — это быстро.'], ['Инструменты внизу', 'Листай нижнюю панель вбок: фильтры, правка, кривые, цвета, кисть, кадр, эффекты, текст, фигуры, стикеры, рисунок, рамки.'],
@@ -906,43 +916,84 @@ const TOUR = [['Добро пожаловать!', 'Я волшебная пал
 let tourI = 0;
 function startTour() { tourI = 0; showTour(); $('tour').classList.add('on'); }
 function showTour() { $('tourH').textContent = TOUR[tourI][0]; $('tourP').textContent = TOUR[tourI][1]; $('tourDots').innerHTML = TOUR.map((_, i) => `<i class="${i === tourI ? 'on' : ''}"></i>`).join(''); $('tourNext').textContent = tourI === TOUR.length - 1 ? 'Поехали!' : 'Дальше'; }
-$('tourNext').onclick = () => { if (tourI < TOUR.length - 1) { tourI++; showTour(); } else { $('tour').classList.remove('on'); lsSet('studio_tour', '1'); flyWand(); } };
+$('tourNext').onclick = () => { if (tourI < TOUR.length - 1) { tourI++; showTour(); } else { $('tour').classList.remove('on'); lsSet('studio_tour', '1'); } };
 
 /* ------------------------------------------------------------------ */
-/*  ВОЛШЕБНАЯ ПАЛОЧКА: полёты, искры, магия                            */
+/*  ВОЛШЕБНАЯ ПАЛОЧКА: рисунок, искры, полёт при входе и по «Магии»    */
 /* ------------------------------------------------------------------ */
+function buildWand() {
+  const top = x => 74.3 + (x - 26) * .02768, bot = x => 85.7 - (x - 26) * .02768, f = n => +n.toFixed(2); let s = '';
+  s += `<defs>
+   <linearGradient id="wWood" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#a77544"/><stop offset=".3" stop-color="#6a4120"/><stop offset=".7" stop-color="#3a2210"/><stop offset="1" stop-color="#1a0e06"/></linearGradient>
+   <linearGradient id="wGold" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff3c8"/><stop offset=".45" stop-color="#d9b062"/><stop offset="1" stop-color="#7a5a22"/></linearGradient>
+   <radialGradient id="wBall" cx=".35" cy=".3" r=".8"><stop offset="0" stop-color="#fff6d2"/><stop offset=".5" stop-color="#d4af64"/><stop offset="1" stop-color="#6e4f1c"/></radialGradient>
+   <radialGradient id="wCry" cx=".5" cy=".5" r=".6"><stop offset="0" stop-color="#ffffff"/><stop offset=".45" stop-color="#ffe9a8"/><stop offset="1" stop-color="#d89a2c"/></radialGradient>
+   <radialGradient id="wHalo" cx=".5" cy=".5" r=".5"><stop offset="0" stop-color="#ffeeb4" stop-opacity=".75"/><stop offset=".5" stop-color="#ffd878" stop-opacity=".25"/><stop offset="1" stop-color="#ffd878" stop-opacity="0"/></radialGradient>
+   <radialGradient id="wRuby" cx=".35" cy=".3" r=".8"><stop offset="0" stop-color="#ff8a9a"/><stop offset=".5" stop-color="#c4243b"/><stop offset="1" stop-color="#5a0a18"/></radialGradient></defs>`;
+  s += '<g transform="rotate(-45 80 80)">';
+  s += '<circle cx="147" cy="80" r="24" fill="url(#wHalo)"/>';
+  s += `<path d="M26 ${f(top(26))} L138 ${f(top(138))} L138 ${f(bot(138))} L26 ${f(bot(26))} Z" fill="url(#wWood)" stroke="#140a04" stroke-width="1.1" stroke-linejoin="round"/>`;
+  for (const [x0, o, w] of [[32, -3.4, .5], [40, 2.8, .45], [60, -1.2, .4], [88, 1.6, .4], [30, 3.8, .4], [70, -2.6, .35]]) s += `<path d="M${x0} ${f(80 + o)} q18 ${o > 0 ? -.9 : .9} 36 .2 t38 -.3" fill="none" stroke="#25130a" stroke-opacity=".38" stroke-width="${w}"/>`;
+  s += `<path d="M30 ${f(top(30) + 1.1)} L136 ${f(top(136) + 1)}" stroke="#e0b27a" stroke-opacity=".5" stroke-width=".9" stroke-linecap="round"/>`;
+  for (let x = 54; x < 126; x += 8.5) s += `<path d="M${x} ${f(top(x) + .4)} L${f(x + 6)} ${f(bot(x + 6) - .4)}" stroke="#170c05" stroke-width="1" stroke-linecap="round"/><path d="M${f(x + 1.5)} ${f(top(x) + .5)} L${f(x + 7.5)} ${f(bot(x + 6) - .3)}" stroke="#c8935a" stroke-opacity=".5" stroke-width=".7" stroke-linecap="round"/>`;
+  s += `<path d="M26 ${f(top(26))} L52 ${f(top(52))} L52 ${f(bot(52))} L26 ${f(bot(26))} Z" fill="#2a1508" stroke="#100803" stroke-width=".8"/>`;
+  for (let x = 28; x < 51; x += 3) s += `<path d="M${x} ${f(top(x) + .2)} L${f(x + 2.4)} ${f(bot(x + 2) - .2)}" stroke="#7a5128" stroke-width=".9" stroke-opacity=".9" stroke-linecap="round"/>`;
+  for (const x of [25.5, 32, 38.5, 45, 51.5]) { const hh = bot(x) - top(x) + 2.2; s += `<rect x="${x}" y="${f(80 - hh / 2)}" width="2.3" height="${f(hh)}" rx="1.3" fill="url(#wGold)" stroke="#3a2410" stroke-width=".6"/><path d="M${f(x + .8)} ${f(80 - hh / 2 + 1)} v${f(hh - 2)}" stroke="#fffbe6" stroke-opacity=".55" stroke-width=".5"/>`; }
+  s += '<ellipse cx="19" cy="80" rx="8.4" ry="8.8" fill="url(#wBall)" stroke="#3a2410" stroke-width=".9"/><circle cx="19" cy="80" r="3.1" fill="url(#wRuby)" stroke="#3a0a12" stroke-width=".6"/><circle cx="18" cy="78.8" r=".9" fill="#fff" opacity=".9"/>';
+  s += '<path d="M12.4 75.6 q-2.6 4.4 0 8.8 M25.6 75.6 q2.6 4.4 0 8.8" fill="none" stroke="#7a5a22" stroke-width=".7"/>';
+  for (const x of [121, 126.5]) { const hh = bot(x) - top(x) + 3.4; s += `<rect x="${x}" y="${f(80 - hh / 2)}" width="2.5" height="${f(hh)}" rx="1.1" fill="url(#wGold)" stroke="#3a2410" stroke-width=".55"/>`; }
+  s += '<path d="M129.5 78.4 q6 -6.6 12.6 -2.6 M129.5 81.6 q6 6.6 12.6 2.6" fill="none" stroke="url(#wGold)" stroke-width="1" stroke-linecap="round"/><circle cx="124" cy="80" r=".8" fill="#fff3c8"/>';
+  const pts = []; for (let k = 0; k < 8; k++) { const an = k * Math.PI / 4, r = k % 2 ? 4.9 : 12.5; pts.push(`${f(147 + r * Math.cos(an))},${f(80 + r * Math.sin(an))}`); }
+  s += `<path d="M144.4 76.6 L141 80 L144.4 83.4 Z" fill="#e9b24a" opacity=".6"/><polygon points="${pts.join(' ')}" fill="url(#wCry)" stroke="#8a5a10" stroke-width=".8" stroke-linejoin="round"/>`;
+  for (let k = 0; k < 8; k += 2) { const an = k * Math.PI / 4; s += `<path d="M147 80 L${f(147 + 12.5 * Math.cos(an))} ${f(80 + 12.5 * Math.sin(an))}" stroke="#fff6d2" stroke-opacity=".9" stroke-width=".55"/>`; }
+  s += '<circle cx="147" cy="80" r="3.3" fill="#fff" opacity=".95"/>';
+  for (const [dx, dy, l, o] of [[1, 0, 21, .85], [-1, 0, 8, .5], [0, 1, 15, .55], [0, -1, 15, .55], [.7, .7, 12, .4], [.7, -.7, 12, .4]]) s += `<path d="M${147 + dx * 14} ${80 + dy * 14} L${f(147 + dx * (14 + l))} ${f(80 + dy * (14 + l))}" stroke="#ffeab0" stroke-opacity="${o}" stroke-width=".7" stroke-linecap="round"/>`;
+  s += '<path d="M159 66 l1.2 3.1 3.1 1.2 -3.1 1.2 -1.2 3.1 -1.2 -3.1 -3.1 -1.2 3.1 -1.2z M157 94 l.9 2.3 2.3 .9 -2.3 .9 -.9 2.3 -.9 -2.3 -2.3 -.9 2.3 -.9z M136 60 l.8 2 2 .8 -2 .8 -.8 2 -.8 -2 -2 -.8 2 -.8z" fill="#fff3c9"/>';
+  s += '</g>'; $('wand').innerHTML = s;
+}
+buildWand();
+const svgURI = s => 'url("data:image/svg+xml;utf8,' + encodeURIComponent(s) + '")';
+const SPR = [
+  svgURI('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><defs><radialGradient id="g"><stop offset="0" stop-color="#fff"/><stop offset=".5" stop-color="#ffeaa8"/><stop offset="1" stop-color="#d4a64a"/></radialGradient></defs><path d="M12 0 L14.2 9.8 L24 12 L14.2 14.2 L12 24 L9.8 14.2 L0 12 L9.8 9.8Z" fill="url(#g)"/></svg>'),
+  svgURI('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 1 L13.1 10.9 L23 12 L13.1 13.1 L12 23 L10.9 13.1 L1 12 L10.9 10.9Z" fill="#fff6d2"/></svg>'),
+  svgURI('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><defs><radialGradient id="g"><stop offset="0" stop-color="#fff"/><stop offset=".4" stop-color="#ffe9a8"/><stop offset="1" stop-color="#ffd878" stop-opacity="0"/></radialGradient></defs><circle cx="12" cy="12" r="11" fill="url(#g)"/></svg>'),
+  svgURI('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><defs><radialGradient id="g"><stop offset="0" stop-color="#fff"/><stop offset=".5" stop-color="#cfe9ff"/><stop offset="1" stop-color="#8fb8e8"/></radialGradient></defs><path d="M12 2 L13.6 10.4 L22 12 L13.6 13.6 L12 22 L10.4 13.6 L2 12 L10.4 10.4Z" fill="url(#g)"/></svg>')];
 function spark(x, y, o = {}) {
-  const el = document.createElement('i'); el.className = 'sp'; el.textContent = o.ch || ['✦', '✧', '✨', '⋆', '✶'][Math.random() * 5 | 0]; el.style.left = x + 'px'; el.style.top = y + 'px'; el.style.fontSize = (o.size || 10 + Math.random() * 14) + 'px';
-  if (o.color) el.style.color = o.color; document.body.appendChild(el); const dx = (Math.random() - .5) * (o.spread || 70), dy = (Math.random() - .5) * (o.spread || 70) + (o.fall || 20);
-  el.animate([{ transform: 'translate(-50%,-50%) scale(.2) rotate(0deg)', opacity: 0 }, { transform: 'translate(-50%,-50%) scale(1.1) rotate(70deg)', opacity: 1, offset: .25 }, { transform: `translate(calc(-50% + ${dx}px),calc(-50% + ${dy}px)) scale(.1) rotate(220deg)`, opacity: 0 }],
-    { duration: o.dur || (600 + Math.random() * 500), easing: 'ease-out' }).onfinish = () => el.remove();
+  const el = document.createElement('i'); el.className = 'sp'; const r = Math.random(), sp = o.sprite != null ? o.sprite : (r < .38 ? 0 : r < .66 ? 1 : r < .9 ? 2 : 3), size = o.size || (sp === 2 ? 6 + Math.random() * 10 : 9 + Math.random() * 15);
+  el.style.cssText = `left:${x}px;top:${y}px;width:${size}px;height:${size}px;background-image:${SPR[sp]}`; document.body.appendChild(el);
+  const dx = (Math.random() - .5) * (o.spread || 60), dy = (Math.random() - .5) * (o.spread || 60) + (o.fall || 24), rot = (Math.random() - .5) * 200;
+  el.animate([{ transform: 'translate(-50%,-50%) scale(.1) rotate(0deg)', opacity: 0 }, { transform: 'translate(-50%,-50%) scale(1) rotate(' + rot * .4 + 'deg)', opacity: 1, offset: .22 }, { transform: `translate(calc(-50% + ${dx}px),calc(-50% + ${dy}px)) scale(.15) rotate(${rot}deg)`, opacity: 0 }],
+    { duration: o.dur || (650 + Math.random() * 550), easing: 'ease-out' }).onfinish = () => el.remove();
 }
 function burst(x, y, n = 12, o) { for (let i = 0; i < n; i++) setTimeout(() => spark(x, y, o), i * 18); }
-function sparkAtEl(el) { if (!el) return; const r = el.getBoundingClientRect(); burst(r.left + r.width / 2, r.top + r.height / 2, 9); }
+function sparkAtEl(el) { if (!el) return; const r = el.getBoundingClientRect(); burst(r.left + r.width / 2, r.top + r.height / 2, 7, { spread: 56 }); }
 let flying = false;
-function flyWand(pts, dur = 1900, onMid) {
-  if (flying) return; flying = true; const w = $('flyWand'), vw = innerWidth, vh = innerHeight;
-  pts = pts || [[vw * .1, vh * .75], [vw * .35, vh * .3], [vw * .62, vh * .62], [vw * .85, vh * .22], [vw * 1.1, vh * .45]];
-  const frames = []; const N = 36;
-  const catmull = (p0, p1, p2, p3, t) => { const t2 = t * t, t3 = t2 * t; return [0, 1].map(k => .5 * ((2 * p1[k]) + (-p0[k] + p2[k]) * t + (2 * p0[k] - 5 * p1[k] + 4 * p2[k] - p3[k]) * t2 + (-p0[k] + 3 * p1[k] - 3 * p2[k] + p3[k]) * t3)); };
-  const path = []; for (let i = 0; i < pts.length - 1; i++) for (let s = 0; s < N / (pts.length - 1); s++) path.push(catmull(pts[Math.max(0, i - 1)], pts[i], pts[i + 1], pts[Math.min(pts.length - 1, i + 2)], s / (N / (pts.length - 1))));
-  path.push(pts[pts.length - 1]);
-  path.forEach((p, i) => { const q = path[Math.min(path.length - 1, i + 1)], a = Math.atan2(q[1] - p[1], q[0] - p[0]) * 180 / Math.PI * .3 - 20; frames.push({ transform: `translate(${p[0] - 27}px,${p[1] - 27}px) rotate(${a}deg) scale(${1 + Math.sin(i / path.length * Math.PI) * .25})`, opacity: i < 2 || i > path.length - 3 ? .0 : 1, offset: i / (path.length - 1) }); });
-  const anim = w.animate(frames, { duration: dur, easing: 'ease-in-out' }); let tick = setInterval(() => { const r = w.getBoundingClientRect(); if (r.width) spark(r.left + 12, r.top + 38, { spread: 40, fall: 30, dur: 800 }); }, 45);
+function flyWand(pts, dur = 2000, onMid) {
+  if (flying) return; flying = true; const w = $('flyWand'), vw = innerWidth, vh = innerHeight, SZ = 120;
+  pts = pts || [[vw * .08, vh * .8], [vw * .3, vh * .35], [vw * .55, vh * .62], [vw * .82, vh * .2], [vw * 1.12, vh * .4]];
+  const N = 54, catmull = (p0, p1, p2, p3, t) => { const t2 = t * t, t3 = t2 * t; return [0, 1].map(k => .5 * ((2 * p1[k]) + (-p0[k] + p2[k]) * t + (2 * p0[k] - 5 * p1[k] + 4 * p2[k] - p3[k]) * t2 + (-p0[k] + 3 * p1[k] - 3 * p2[k] + p3[k]) * t3)); };
+  const path = []; const per = N / (pts.length - 1); for (let i = 0; i < pts.length - 1; i++) for (let s = 0; s < per; s++) path.push(catmull(pts[Math.max(0, i - 1)], pts[i], pts[i + 1], pts[Math.min(pts.length - 1, i + 2)], s / per)); path.push(pts[pts.length - 1]);
+  const frames = [], tips = [], tx = SZ * .205, ty = -SZ * .205;  /* вектор от центра к кончику при повороте 0 */
+  path.forEach((p, i) => { const q = path[Math.min(path.length - 1, i + 1)], pr = path[Math.max(0, i - 1)], ang = Math.atan2(q[1] - pr[1], q[0] - pr[0]) * 180 / Math.PI;
+    const a = ang * .35 + Math.sin(i / 3.2) * 9 + 8, ra = a * Math.PI / 180, sc = 1 + Math.sin(i / path.length * Math.PI) * .22;
+    frames.push({ transform: `translate(${p[0] - SZ / 2}px,${p[1] - SZ / 2}px) rotate(${a}deg) scale(${sc})`, opacity: i < 2 || i > path.length - 3 ? 0 : 1, offset: i / (path.length - 1) });
+    tips.push([p[0] + (tx * Math.cos(ra) - ty * Math.sin(ra)) * sc * 1.9, p[1] + (tx * Math.sin(ra) + ty * Math.cos(ra)) * sc * 1.9]); });
+  const anim = w.animate(frames, { duration: dur, easing: 'ease-in-out' });
+  const tick = setInterval(() => { const ct = anim.currentTime || 0, i = Math.min(tips.length - 1, Math.floor(ct / dur * (tips.length - 1))); if (tips[i]) { spark(tips[i][0], tips[i][1], { spread: 36, fall: 28, dur: 900 }); if (Math.random() < .6) spark(tips[i][0], tips[i][1], { spread: 26, sprite: 2, size: 6 }); } }, 38);
   const mid = setTimeout(() => onMid && onMid(), dur * .45);
   let ended = false; const done = () => { if (ended) return; ended = true; clearInterval(tick); clearTimeout(mid); w.style.opacity = 0; flying = false; try { anim.cancel(); } catch (e) {} };
   anim.onfinish = done; setTimeout(done, dur + 350);
 }
 function magic() {
-  if (!S.src || flying) return; const st = $('stage').getBoundingClientRect(), x0 = st.left + 30, y0 = st.bottom - 40;
-  flyWand([[x0, y0], [st.left + st.width * .3, st.top + st.height * .7], [st.left + st.width * .6, st.top + st.height * .3], [st.left + st.width * .85, st.top + st.height * .55], [st.right + 40, st.top + 20]], 2100, () => {
-    const sw = $('sweep'); sw.classList.remove('go'); void sw.offsetWidth; sw.classList.add('go'); autoApply('all', true); burst(st.left + st.width / 2, st.top + st.height / 2, 26, { spread: 220 }); toast('✨ Готово! Волшебное улучшение применено'); });
+  if (!S.src || flying) return; const st = $('stage').getBoundingClientRect(), cx = st.left + st.width / 2, cy = st.top + st.height / 2, R = Math.min(st.width, st.height) * .16;
+  const loop = [0, 1, 2, 3, 4, 5].map(i => { const a = -1.2 + i * 1.05; return [cx + Math.cos(a) * R, cy + Math.sin(a) * R * .8]; });
+  flyWand([[st.left - 30, st.bottom - 30], [st.left + st.width * .28, st.top + st.height * .75], ...loop, [st.right + 50, st.top + 10]], 2800, () => {
+    const sw = $('sweep'); sw.classList.remove('go'); void sw.offsetWidth; sw.classList.add('go'); autoApply('all', true); burst(cx, cy, 24, { spread: 200 }); toast('✨ Готово! Свет, цвет и чёткость подтянуты'); });
   hap('light');
 }
-$('bMagic').onclick = magic;
-setInterval(() => { if (document.hidden || flying || !S.src || document.querySelector('.modal.on,.tour.on') || Math.random() < .35) return; const vw = innerWidth, vh = innerHeight, y = vh * (.15 + Math.random() * .5);
-  flyWand([[-40, y], [vw * .3, y - 60 + Math.random() * 120], [vw * .65, y + 40 - Math.random() * 100], [vw + 40, y]], 3200); }, 24000);
-
+$('bMagic').onclick = magic; $('sMagic') && ($('sMagic').onclick = magic);
+/* при входе в приложение палочка пролетает один раз */
+setTimeout(() => { if (!document.hidden) flyWand(null, 2400); }, 700);
 /* ------------------------------------------------------------------ */
 /*  ВКЛАДКИ, СРАВНЕНИЕ, ЭКСПОРТ                                        */
 /* ------------------------------------------------------------------ */
